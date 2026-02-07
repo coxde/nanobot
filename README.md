@@ -356,6 +356,20 @@ Config file: `~/.nanobot/config.json`
 | `aihubmix` | LLM (API gateway, access to all models) | [aihubmix.com](https://aihubmix.com) |
 | `dashscope` | LLM (Qwen) | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 
+### Explicit Provider Selection
+
+By default, nanobot automatically routes models based on their names (e.g., "gpt-5" → OpenAI). If you use a custom model name with a specific provider, you can force it explicitly:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-opus-4-5",
+      "provider": "openrouter"
+    }
+  }
+}
+```
 
 ### Security
 
