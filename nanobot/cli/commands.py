@@ -635,6 +635,8 @@ def status():
 
     if config_path.exists():
         console.print(f"Model: {config.agents.defaults.model}")
+        if config.agents.defaults.provider:
+            console.print(f"Provider: {config.agents.defaults.provider} (explicit)")
         
         # Check API keys
         has_openrouter = bool(config.providers.openrouter.api_key)
