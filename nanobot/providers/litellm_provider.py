@@ -23,22 +23,31 @@ class LiteLLMProvider(LLMProvider):
         api_base: str | None = None,
         default_model: str = "anthropic/claude-opus-4-5",
         extra_headers: dict[str, str] | None = None,
+        provider_type: str | None = None,
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.extra_headers = extra_headers or {}
+        self.provider_type = provider_type
         
-        # Detect OpenRouter by api_key prefix or explicit api_base
+        # Detect OpenRouter by api_key prefix, explicit api_base, or explicit provider_type
         self.is_openrouter = (
             (api_key and api_key.startswith("sk-or-")) or
-            (api_base and "openrouter" in api_base)
+            (api_base and "openrouter" in api_base) or
+            (provider_type == "openrouter")
         )
         
-        # Detect AiHubMix by api_base
-        self.is_aihubmix = bool(api_base and "aihubmix" in api_base)
+        # Detect AiHubMix by api_base or explicit provider_type
+        self.is_aihubmix = (
+            bool(api_base and "aihubmix" in api_base) or
+            (provider_type == "aihubmix")
+        )
         
         # Track if using custom endpoint (vLLM, etc.)
-        self.is_vllm = bool(api_base) and not self.is_openrouter and not self.is_aihubmix
+        self.is_vllm = (
+            (bool(api_base) and not self.is_openrouter and not self.is_aihubmix) or
+            (provider_type == "vllm")
+        )
         
         # Configure LiteLLM based on provider
         if api_key:
@@ -51,22 +60,22 @@ class LiteLLMProvider(LLMProvider):
             elif self.is_vllm:
                 # vLLM/custom endpoint - uses OpenAI-compatible API
                 os.environ["HOSTED_VLLM_API_KEY"] = api_key
-            elif "deepseek" in default_model:
+            elif provider_type == "deepseek" or (not provider_type and "deepseek" in default_model):
                 os.environ.setdefault("DEEPSEEK_API_KEY", api_key)
-            elif "anthropic" in default_model:
+            elif provider_type == "anthropic" or (not provider_type and "anthropic" in default_model):
                 os.environ.setdefault("ANTHROPIC_API_KEY", api_key)
-            elif "openai" in default_model or "gpt" in default_model:
+            elif provider_type == "openai" or (not provider_type and ("openai" in default_model or "gpt" in default_model)):
                 os.environ.setdefault("OPENAI_API_KEY", api_key)
-            elif "gemini" in default_model.lower():
+            elif provider_type == "gemini" or (not provider_type and "gemini" in default_model.lower()):
                 os.environ.setdefault("GEMINI_API_KEY", api_key)
-            elif "zhipu" in default_model or "glm" in default_model or "zai" in default_model:
+            elif provider_type == "zhipu" or (not provider_type and ("zhipu" in default_model or "glm" in default_model or "zai" in default_model)):
                 os.environ.setdefault("ZAI_API_KEY", api_key)
                 os.environ.setdefault("ZHIPUAI_API_KEY", api_key)
-            elif "dashscope" in default_model or "qwen" in default_model.lower():
+            elif provider_type == "dashscope" or (not provider_type and ("dashscope" in default_model or "qwen" in default_model.lower())):
                 os.environ.setdefault("DASHSCOPE_API_KEY", api_key)
-            elif "groq" in default_model:
+            elif provider_type == "groq" or (not provider_type and "groq" in default_model):
                 os.environ.setdefault("GROQ_API_KEY", api_key)
-            elif "moonshot" in default_model or "kimi" in default_model:
+            elif provider_type == "moonshot" or (not provider_type and ("moonshot" in default_model or "kimi" in default_model)):
                 os.environ.setdefault("MOONSHOT_API_KEY", api_key)
                 os.environ.setdefault("MOONSHOT_API_BASE", api_base or "https://api.moonshot.cn/v1")
         
@@ -100,18 +109,20 @@ class LiteLLMProvider(LLMProvider):
         model = model or self.default_model
         
         # Auto-prefix model names for known providers
-        # (keywords, target_prefix, skip_if_starts_with)
-        _prefix_rules = [
-            (("glm", "zhipu"), "zai", ("zhipu/", "zai/", "openrouter/", "hosted_vllm/")),
-            (("qwen", "dashscope"), "dashscope", ("dashscope/", "openrouter/")),
-            (("moonshot", "kimi"), "moonshot", ("moonshot/", "openrouter/")),
-            (("gemini",), "gemini", ("gemini/",)),
-        ]
-        model_lower = model.lower()
-        for keywords, prefix, skip in _prefix_rules:
-            if any(kw in model_lower for kw in keywords) and not any(model.startswith(s) for s in skip):
-                model = f"{prefix}/{model}"
-                break
+        # Skip if provider_type is explicitly set (trust the user/config)
+        if not self.provider_type:
+            # (keywords, target_prefix, skip_if_starts_with)
+            _prefix_rules = [
+                (("glm", "zhipu"), "zai", ("zhipu/", "zai/", "openrouter/", "hosted_vllm/")),
+                (("qwen", "dashscope"), "dashscope", ("dashscope/", "openrouter/")),
+                (("moonshot", "kimi"), "moonshot", ("moonshot/", "openrouter/")),
+                (("gemini",), "gemini", ("gemini/",)),
+            ]
+            model_lower = model.lower()
+            for keywords, prefix, skip in _prefix_rules:
+                if any(kw in model_lower for kw in keywords) and not any(model.startswith(s) for s in skip):
+                    model = f"{prefix}/{model}"
+                    break
 
         # Gateway/endpoint-specific prefixes (detected by api_base/api_key, not model name)
         if self.is_openrouter and not model.startswith("openrouter/"):

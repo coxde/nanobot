@@ -51,6 +51,7 @@ class AgentDefaults(BaseModel):
     """Default agent configuration."""
     workspace: str = "~/.nanobot/workspace"
     model: str = "anthropic/claude-opus-4-5"
+    provider: str | None = None  # Explicit provider (e.g. "openai", "openrouter")
     max_tokens: int = 8192
     temperature: float = 0.7
     max_tool_iterations: int = 20
@@ -128,8 +129,15 @@ class Config(BaseSettings):
     # Default base URLs for API gateways
     _GATEWAY_DEFAULTS = {"openrouter": "https://openrouter.ai/api/v1", "aihubmix": "https://aihubmix.com/v1"}
 
-    def get_provider(self, model: str | None = None) -> ProviderConfig | None:
+    def get_provider(self, model: str | None = None, provider: str | None = None) -> ProviderConfig | None:
         """Get matched provider config (api_key, api_base, extra_headers). Falls back to first available."""
+        # Prioritize explicit provider if specified
+        provider_name = provider or self.agents.defaults.provider
+        if provider_name:
+            p = getattr(self.providers, provider_name, None)
+            if p and (p.api_key or p.api_base):
+                return p
+
         model = (model or self.agents.defaults.model).lower()
         p = self.providers
         # Keyword → provider mapping (order matters: gateways first)
@@ -141,22 +149,22 @@ class Config(BaseSettings):
             "dashscope": p.dashscope, "qwen": p.dashscope,
             "groq": p.groq, "moonshot": p.moonshot, "kimi": p.moonshot, "vllm": p.vllm,
         }
-        for kw, provider in keyword_map.items():
-            if kw in model and provider.api_key:
-                return provider
+        for kw, pr in keyword_map.items():
+            if kw in model and pr.api_key:
+                return pr
         # Fallback: gateways first (can serve any model), then specific providers
         all_providers = [p.openrouter, p.aihubmix, p.anthropic, p.openai, p.deepseek,
                          p.gemini, p.zhipu, p.dashscope, p.moonshot, p.vllm, p.groq]
         return next((pr for pr in all_providers if pr.api_key), None)
 
-    def get_api_key(self, model: str | None = None) -> str | None:
+    def get_api_key(self, model: str | None = None, provider: str | None = None) -> str | None:
         """Get API key for the given model. Falls back to first available key."""
-        p = self.get_provider(model)
+        p = self.get_provider(model, provider)
         return p.api_key if p else None
     
-    def get_api_base(self, model: str | None = None) -> str | None:
+    def get_api_base(self, model: str | None = None, provider: str | None = None) -> str | None:
         """Get API base URL for the given model. Applies default URLs for known gateways."""
-        p = self.get_provider(model)
+        p = self.get_provider(model, provider)
         if p and p.api_base:
             return p.api_base
         # Default URLs for known gateways (openrouter, aihubmix)
